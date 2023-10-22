@@ -120,7 +120,7 @@ class Thread {
 		interPoint.connect(newPoint);
 		interPoint.fixTo(newPoint)
 
-		return delay(10, interPoint);
+		return delay(3, interPoint);
 	}
 }
 
@@ -230,13 +230,11 @@ class DreamCatcher {
 }
 
 const dreamCatcher = new DreamCatcher('canvas', {
-	baseCount: 20,
-	rounds: [
-		1,1,1,[1/2],1,1,2,2,1,
-		1,[1/2],1,1,1,1,
-		2,1,1,1,1,1,1,1,1,1,1,
-//			2,1,1,1,1,1,1,1,1,1,1,1,
-	]
+	baseCount: 19,
+	rounds: [1,1,1,1,1,1/2,1,1,2,1,1,1,2,1,1,
+	1,1,1,1,1,1,1,1,1,1,1,1,1,
+	],
+
 });
 dreamCatcher.contruct()
 setInterval(() => {

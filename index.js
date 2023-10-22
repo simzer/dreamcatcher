@@ -1,5 +1,9 @@
 "use strict"
 
+function delay(t, val) {
+    return new Promise(resolve => setTimeout(resolve, t, val));
+}
+
 class Point {
 	static C = 1
 	static S = .4
@@ -13,6 +17,7 @@ class Point {
 		this.ax = 0;
 		this.ay = 0;
 		this.connections = [];
+		this.fixedTo = [];
 		this.fixed = false;
 	}
 
@@ -23,11 +28,26 @@ class Point {
 		this.y += this.vy * dt
 	}
 
+	postprocPos() {
+		let cnt = 1;
+		for (let other of this.fixedTo) {
+			this.x += other.x
+			this.y += other.y
+			cnt++;
+		}
+		this.x = this.x / cnt
+		this.y = this.y / cnt
+		for (let other of this.fixedTo) {
+			other.x = this.x
+			other.y = this.y
+		}
+	}
+
 	updateAcc() {
 		if (!this.fixed) {
 			const F = { x: 0, y: 0 }
-//			F.x += Point.C/50 * (400 - this.x)
-//			F.y += Point.C/50 * (400 - this.y)
+//			F.x += Point.C/100 * (400 - this.x)
+//			F.y += Point.C/100 * (400 - this.y)
 			for (let other of this.connections) {
 				F.x += Point.C * (other.x - this.x)
 				F.y += Point.C * (other.y - this.y)
@@ -42,6 +62,11 @@ class Point {
 	connect(point) {
 		this.connections.push(point);
 		point.connections.push(this);
+	}
+
+	fixTo(point) {
+		this.fixedTo.push(point)
+		point.fixedTo.push(this)
 	}
 
 	disconnect(point, disconnectOther = true) {
@@ -71,29 +96,31 @@ class Thread {
 		return point;
 	}
 
-	makePointsAfter(index, count) {
-		const prevPoint = this.points[index]; 
+	async makePointsAfter(index, count) {
+		index = Math.round(index)
+		let prevPoint = this.points[index]; 
 		const nextPoint = this.points[index + 1];
 		for (let i = 0; i < count; i++) {
-			prevPoint = this.insertBetween(prevPoint, nextPoint)
+			prevPoint = await this.insertBetween(prevPoint, nextPoint)
 		}
 	}
 
-	makePointAfter(index) {
-		const prevPoint = this.points[index]; 
-		const nextPoint = this.points[index + 1];
-		return this.insertBetween(prevPoint, nextPoint)
-	}
-
-	insertBetween(prevPoint, nextPoint) {
-		const endPoint = this.points[this.points.length - 1]
-		const newPoint = Point.middle(prevPoint, nextPoint);
+	async insertBetween(prevPoint, nextPoint) {
+		const interPoint = Point.middle(prevPoint, nextPoint);
 		prevPoint.disconnect(nextPoint);
-		prevPoint.connect(newPoint);
-		newPoint.connect(nextPoint);
+		interPoint.connect(prevPoint);
+		interPoint.connect(nextPoint);
+		this.points.splice(this.points.indexOf(prevPoint),0, interPoint);
+
+		const newPoint = Point.middle(prevPoint, nextPoint);
+		const endPoint = this.points[this.points.length - 1]
 		endPoint.connect(newPoint);
 		this.points.push(newPoint);
-		return newPoint;
+
+		interPoint.connect(newPoint);
+		interPoint.fixTo(newPoint)
+
+		return delay(10, interPoint);
 	}
 }
 
@@ -111,18 +138,15 @@ class DreamCatcher {
 		this.actBase = 0;
 	}
 
-	contruct() {
+	async contruct() {
 		this.addBase();
-		this.addRounds([
-			[2,0],[0,1],[0,1],[2,1],[0,1],1,2,1,1,2,[0,1],1,2,2,2,
-			1,1,1,1,1,1,1,1,1,1
-		])
+		await this.addRounds(this.options.rounds)
 		this.closePoints();
 	}
 
-	addRounds(steps) {
+	async addRounds(steps) {
 		for (let step of steps)
-		 this.addRound(step)
+			await this.addRound(step)
 	}
 
 	addBase() {
@@ -140,14 +164,24 @@ class DreamCatcher {
 		return [x, y];
 	}
 
-	addRound(steps = [1]) {
+	async addRound(steps = [1]) {
 		if (!Array.isArray(steps)) steps = [steps]
-		const actEnd = this.thread.points.length - 1;
+		let actEnd = this.thread.points.length - 1;
 		for (let i = 0; this.actBase < actEnd; i++) {
 			const step = steps[i % steps.length]
-			this.thread.makePointAfter(this.actBase)
-			this.actBase += step;
+			if (step >= 1) {
+				await this.thread.makePointsAfter(this.actBase, 1)
+				this.actBase += step + 1
+				actEnd += 1
+			}
+			else {
+				const cnt = Math.round(1/step);
+				await this.thread.makePointsAfter(this.actBase, cnt)
+				this.actBase += cnt + 1;
+				actEnd += cnt
+			}
 		}
+		this.actBase = actEnd
 	}
 
 	closePoints() {
@@ -164,16 +198,23 @@ class DreamCatcher {
 			point.updateAcc()
 		for (let point of this.thread.points)
 			point.updatePos()
+		for (let point of this.thread.points)
+			point.postprocPos()
 	}
 
 	drawBackground() {
-		this.ctx.fillStyle = '#f0f0f0';
+		this.ctx.fillStyle = '#fff';
 		this.ctx.fillRect(0, 0, this.width, this.height);
+		this.ctx.strokeStyle = '#f0d0b0';
+		this.ctx.lineWidth = 10;
+		this.ctx.beginPath();
+		this.ctx.arc(this.origo.x, this.origo.y, this.width/2-5, 0, 2 * Math.PI);
+		this.ctx.stroke();
+		this.ctx.lineWidth = 1;
 	}
 
 	drawPoints() {
-		this.ctx.fillStyle = '#000';
-		this.ctx.strokeStyle = '#000';
+		this.ctx.strokeStyle = '#a04090';
 		const points = this.thread.points;
 		for (let i = 1; i < points.length; i++) {
 			const point = points[i]
@@ -189,10 +230,16 @@ class DreamCatcher {
 }
 
 const dreamCatcher = new DreamCatcher('canvas', {
-	baseCount: 25
+	baseCount: 20,
+	rounds: [
+		1,1,1,[1/2],1,1,2,2,1,
+		1,[1/2],1,1,1,1,
+		2,1,1,1,1,1,1,1,1,1,1,
+//			2,1,1,1,1,1,1,1,1,1,1,1,
+	]
 });
 dreamCatcher.contruct()
 setInterval(() => {
 	dreamCatcher.draw();
 	dreamCatcher.update();
-}, 1000 / 20);
+}, 1000 / 60);

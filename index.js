@@ -1,5 +1,7 @@
 "use strict"
 
+import { options } from "./samples/spiral.js"
+
 function delay(t, val) {
     return new Promise(resolve => setTimeout(resolve, t, val));
 }
@@ -17,8 +19,13 @@ class Point {
 		this.ax = 0;
 		this.ay = 0;
 		this.connections = [];
+		this.lengths = [];
 		this.fixedTo = [];
 		this.fixed = false;
+	}
+
+	distance(point) {
+		return Math.sqrt((this.x - point.x) ** 2 + (this.y - point.y) ** 2);
 	}
 
 	updatePos(dt = .5) {
@@ -48,9 +55,14 @@ class Point {
 			const F = { x: 0, y: 0 }
 //			F.x += Point.C/100 * (400 - this.x)
 //			F.y += Point.C/100 * (400 - this.y)
-			for (let other of this.connections) {
-				F.x += Point.C * (other.x - this.x)
-				F.y += Point.C * (other.y - this.y)
+			for (let i = 0; i < this.connections.length; i++) {
+				const other = this.connections[i]
+				const length = this.lengths[i]
+				const distance = this.distance(other)
+				const diff = distance/* - length*/
+				if (distance == 0) continue
+				F.x += Point.C * diff * (other.x - this.x) / distance
+				F.y += Point.C * diff * (other.y - this.y) / distance
 			}
 			F.x += - Point.S * this.vx
 			F.y += - Point.S * this.vy
@@ -61,7 +73,9 @@ class Point {
 
 	connect(point) {
 		this.connections.push(point);
+		this.lengths.push(this.distance(point)*0.7);
 		point.connections.push(this);
+		point.lengths.push(this.distance(point)*0.7);
 	}
 
 	fixTo(point) {
@@ -73,12 +87,17 @@ class Point {
 		const index = this.connections.indexOf(point);
 		if (index > -1) {
 			this.connections.splice(index, 1);
+			this.lengths.splice(index, 1);
 		}
-		if (disconnectOther) point.disconnect(this, false);
+		if (disconnectOther) { 
+			point.disconnect(this, false);
+		}
 	}
 
-	static middle(point1, point2) {
-		return new Point((point1.x + point2.x) / 2, (point1.y + point2.y) / 2);
+	static middle(point1, point2, factor = 0.5) { 
+		return new Point(
+			(point1.x * (1-factor) + point2.x * factor),
+			(point1.y * (1-factor) + point2.y * factor));
 	}
 }
 
@@ -101,18 +120,19 @@ class Thread {
 		let prevPoint = this.points[index]; 
 		const nextPoint = this.points[index + 1];
 		for (let i = 0; i < count; i++) {
-			prevPoint = await this.insertBetween(prevPoint, nextPoint)
+			const factor = 1 / (count + 1 - i);
+			prevPoint = await this.insertBetween(prevPoint, nextPoint, factor)
 		}
 	}
 
-	async insertBetween(prevPoint, nextPoint) {
-		const interPoint = Point.middle(prevPoint, nextPoint);
+	async insertBetween(prevPoint, nextPoint, factor) {
+		const interPoint = Point.middle(prevPoint, nextPoint, factor);
 		prevPoint.disconnect(nextPoint);
 		interPoint.connect(prevPoint);
 		interPoint.connect(nextPoint);
 		this.points.splice(this.points.indexOf(prevPoint),0, interPoint);
 
-		const newPoint = Point.middle(prevPoint, nextPoint);
+		const newPoint = Point.middle(prevPoint, nextPoint, factor);
 		const endPoint = this.points[this.points.length - 1]
 		endPoint.connect(newPoint);
 		this.points.push(newPoint);
@@ -150,7 +170,7 @@ class DreamCatcher {
 	}
 
 	addBase() {
-		const count = this.options.baseCount + .5
+		const count = this.options.baseCount/* + .5*/
 		for (let i = 0; i <= count; i++) {
 			let angle = i * 2 * Math.PI / count;
 			const point = this.thread.makePointAtEnd(...this.basePointCoords(angle));
@@ -229,13 +249,7 @@ class DreamCatcher {
 	}
 }
 
-const dreamCatcher = new DreamCatcher('canvas', {
-	baseCount: 19,
-	rounds: [1,1,1,1,1,1/2,1,1,2,1,1,1,2,1,1,
-	1,1,1,1,1,1,1,1,1,1,1,1,1,
-	],
-
-});
+const dreamCatcher = new DreamCatcher('canvas', options);
 dreamCatcher.contruct()
 setInterval(() => {
 	dreamCatcher.draw();
